@@ -1,179 +1,124 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
-import requests
-import os
 
 # --- НАСТРОЙКА СТРАНИЦЫ ---
-st.set_page_config(page_title="🌿 АгроСистема: Календарь + AI", layout="wide")
+st.set_page_config(page_title="🌿 АгроСистема", layout="wide")
 
-# --- 1. БАЗЫ ДАННЫХ (КАЛЕНДАРЬ) ---
+# --- БАЗЫ ДАННЫХ ---
 CITIES_DATA = {
     "Москва": {"last_frost": (5, 10), "soil_warm_10c": (4, 20)},
     "Смоленск": {"last_frost": (5, 18), "soil_warm_10c": (5, 8)},
     "Рославль": {"last_frost": (5, 20), "soil_warm_10c": (5, 10)},
     "Ельня": {"last_frost": (5, 18), "soil_warm_10c": (5, 8)},
-    "Краснодар": {"last_frost": (3, 25), "soil_warm_10c": (3, 10)},
-    "Казань": {"last_frost": (5, 15), "soil_warm_10c": (5, 5)},
-    "Ярославль": {"last_frost": (5, 22), "soil_warm_10c": (5, 12)}
+    "Краснодар": {"last_frost": (3, 25), "soil_warm_10c": (3, 10)}
 }
 
 CROPS_DATA = {
     "🍅 Томаты": {
         "min_temp": 10, "frost_sensitive": True, "delay_days": 14, 
-        "plan": ["🌱 Высадка рассады", "+14 дней: Пасынкование", "+30 дней: Подкормка", "+60 дней: Сбор урожая"]
-    },
-    "🥔 Картофель": {
-        "min_temp": 7, "frost_sensitive": False, "delay_days": 0, 
-        "plan": ["🥔 Посадка клубней", "+20 дней: Окучивание", "+40 дней: Обработка", "+90 дней: Уборка"]
+        "plan": ["🌱 Высадка", "+14 дней: Пасынкование", "+30 дней: Подкормка"]
     },
     "🥒 Огурцы": {
         "min_temp": 12, "frost_sensitive": True, "delay_days": 7, 
         "plan": ["🥒 Посев", "+10 дней: Прищипывание", "+25 дней: Сбор"]
     },
-    "🥕 Морковь": {
-        "min_temp": 5, "frost_sensitive": False, "delay_days": 0, 
-        "plan": ["🥕 Посев", "+30 дней: Прореживание", "+90 дней: Уборка"]
-    },
-    "🥬 Капуста": {
-        "min_temp": 5, "frost_sensitive": False, "delay_days": 0, 
-        "plan": ["🥬 Посадка", "+15 дней: Окучивание", "+70 дней: Срезка"]
+    "🥔 Картофель": {
+        "min_temp": 7, "frost_sensitive": False, "delay_days": 0, 
+        "plan": ["🥔 Посадка", "+20 дней: Окучивание", "+90 дней: Уборка"]
     }
 }
 
-# --- 2. БАЗА ЗНАНИЙ ДЛЯ AI (СОВЕТЫ ПО ЛЕЧЕНИЮ) ---
-TREATMENT_DB = {
-    "Early_blight": {"name": "Альтернариоз (Пятнистость)", "solution": "🛡️ Препараты: Гамаир, Алирин-Б. Удалите больные листья."},
-    "Late_blight": {"name": "Фитофтороз", "solution": "🛡️ Препараты: Фитоспорин, Триходермин. Снизьте влажность."},
-    "Healthy": {"name": "Здоровое растение ", "solution": "✅ Растение здорово! Продолжайте уход."},
-    "Tomato_mosaic_virus": {"name": "Вирус табачной мозаики", "solution": "🗑️ Лечению не подлежит. Удалите куст."},
-    "Spider_mites": {"name": "Паутинный клещ", "solution": "🕷️ Препарат Фитоверм или хищный клещ."},
-    "Powdery_mildew": {"name": "Мучнистая роса", "solution": "🥛 Тиовит Джет или раствор сыворотки (1:10)."}
+# БАЗА ДИАГНОСТИКИ (вместо AI)
+DISEASE_DB = {
+    "🍅 Томаты": {
+        "🟤 Коричневые пятна на листьях": {
+            "diagnosis": "Альтернариоз (Сухая пятнистость)",
+            "treatment": "🛡️ Препараты: Гамаир, Алирин-Б",
+            "prevention": "Удалите больные листья. Не переувлажняйте."
+        },
+        "⚫ Черные пятна на стебле": {
+            "diagnosis": "Фитофтороз",
+            "treatment": "🛡️ Фитоспорин, Триходермин",
+            "prevention": "Снизьте влажность. Проветривайте теплицу."
+        },
+        "🟡 Листья желтеют и скручиваются": {
+            "diagnosis": "Недостаток азота или тля",
+            "treatment": "💧 Подкормка азотом или Фитоверм от тли",
+            "prevention": "Регулярно удобряйте."
+        }
+    },
+    "🥒 Огурцы": {
+        "🕸️ Паутина на листьях": {
+            "diagnosis": "Паутинный клещ",
+            "treatment": "🕷️ Фитоверм или хищный клещ",
+            "prevention": "Повысьте влажность воздуха."
+        },
+        "⚪ Белый налет на листьях": {
+            "diagnosis": "Мучнистая роса",
+            "treatment": "🥛 Тиовит Джет или раствор сыворотки 1:10",
+            "prevention": "Не перекармливайте азотом."
+        }
+    },
+    "🥔 Картофель": {
+        "🐛 Жуки на листьях": {
+            "diagnosis": "Колорадский жук",
+            "treatment": "🦠 Боверин, Бикол",
+            "prevention": "Собирайте вручную или опрыскивайте био-препаратами."
+        }
+    }
 }
 
-# --- 3. ФУНКЦИИ ---
-
-def get_moon_advice(date_obj):
-    # Упрощенный расчет фаз луны
-    new_moon_ref = datetime(2026, 2, 17)
-    days_diff = (date_obj - new_moon_ref).days
-    moon_age = days_diff % 29.53
-    if moon_age < 2 or moon_age > 27.5: return "🌑 Новолуние (Отдых)"
-    elif 13 < moon_age < 16: return "🌕 Полнолуние (Прополка)"
-    elif moon_age < 14: return "🌒 Растущая луна (Надземные)"
-    else: return "🌘 Убывающая луна (Корни)"
-
-def query_ai(image_data):
-    # Запрос к нейросети Hugging Face
-    HF_TOKEN = os.environ.get("HF_TOKEN")
-    API_URL = "https://api-inference.huggingface.co/models/srihari-humbarwadi/plant-disease-recognition"
-    
-    if not HF_TOKEN:
-        return {"error": "Не настроен ключ API"}
-
-    headers = {"Authorization": f"Bearer {HF_TOKEN}"}
-    try:
-        response = requests.post(API_URL, headers=headers, data=image_data)
-        return response.json()
-    except Exception as e:
-        return {"error": str(e)}
-
-# --- 4. ИНТЕРФЕЙС (МЕНЮ ВЫБОРА) ---
-
+# --- ИНТЕРФЕЙС ---
 mode = st.sidebar.radio(
-    "🌿 Выберите режим работы:",
-    ["📅 АгроМетео: Календарь", "📷 АгроБио: AI Диагностика"],
+    "🌿 Выберите режим:",
+    ["📅 Календарь посадок", "🔍 Диагностика болезней"],
     index=0
 )
 
-# ==========================================
 # РЕЖИМ 1: КАЛЕНДАРЬ
-# ==========================================
-if mode == "📅 АгроМетео: Календарь":
-    st.title("📅 АгроМетео: Планировщик посадок")
+if mode == "📅 Календарь посадок":
+    st.title("📅 АгроМетео: Планировщик")
     
     with st.sidebar:
-        st.subheader("Настройки")
-        selected_city = st.selectbox("📍 Город:", list(CITIES_DATA.keys()))
-        selected_crop = st.selectbox("🥕 Культура:", list(CROPS_DATA.keys()))
-
-    today = datetime.now()
-    year = today.year
+        city = st.selectbox("Город:", list(CITIES_DATA.keys()))
+        crop = st.selectbox("Культура:", list(CROPS_DATA.keys()))
     
-    if st.button("🚀 Рассчитать план работ", type="primary"):
-        city_info = CITIES_DATA[selected_city]
-        crop_info = CROPS_DATA[selected_crop]
-
-        last_frost = datetime(year, city_info["last_frost"][0], city_info["last_frost"][1])
-        soil_warm = datetime(year, city_info["soil_warm_10c"][0], city_info["soil_warm_10c"][1])
+    if st.button("🚀 Рассчитать", type="primary"):
+        today = datetime.now()
+        crop_info = CROPS_DATA[crop]
+        city_info = CITIES_DATA[city]
         
-        base_date = last_frost if crop_info["frost_sensitive"] else soil_warm
-        planting_date = base_date + timedelta(days=crop_info["delay_days"])
-
-        col1, col2, col3 = st.columns(3)
-        with col1: st.metric("📅 Старт", planting_date.strftime("%d %b"))
-        with col2: st.metric("🌡 Почва", f"+{crop_info['min_temp']}°C")
-        with col3: st.metric("🌙 Луна", get_moon_advice(today).split()[0])
-
-        st.divider()
-        st.subheader("📋 Календарь работ")
+        base_date = datetime(today.year, city_info["last_frost"][0], city_info["last_frost"][1])
+        if not crop_info["frost_sensitive"]:
+            base_date = datetime(today.year, city_info["soil_warm_10c"][0], city_info["soil_warm_10c"][1])
         
-        plan_data = []
+        planting = base_date + timedelta(days=crop_info["delay_days"])
+        st.success(f"📅 Начать посадки: **{planting.strftime('%d %B')}**")
+        
+        st.write("📋 План работ:")
         for task in crop_info["plan"]:
-            if "+" in task:
-                days_add = int(task.split(":")[0].replace("+", "").replace(" дней", "").strip())
-                desc = task.split(":")[1].strip()
-                task_date = planting_date + timedelta(days=days_add)
-                status = "✅ Выполнено" if task_date < today else "⏳ Впереди"
-                plan_data.append({"Дата": task_date.strftime("%d.%m"), "Задача": desc, "Статус": status})
-            else:
-                plan_data.append({"Дата": planting_date.strftime("%d.%m"), "Задача": task.replace("🌱","").replace("🥔","").replace("🥒","").replace("🥕","").replace("🥬",""), "Статус": "🎯 СТАРТ"})
+            st.write(f"- {task}")
 
-        df_plan = pd.DataFrame(plan_data)
-        st.dataframe(df_plan, use_container_width=True, hide_index=True)
-
-# ==========================================
-# РЕЖИМ 2: AI ДИАГНОСТИКА
-# ==========================================
+# РЕЖИМ 2: ДИАГНОСТИКА
 else:
-    st.title("📷 АгроБио: Диагностика болезней")
-    st.caption("Загрузите фото листа, нейросеть определит болезнь и подскажет лечение.")
-
-    col1, col2 = st.columns([1, 2])
-
+    st.title("🔍 Диагностика болезней растений")
+    st.write("Выберите культуру и опишите симптомы:")
+    
+    col1, col2 = st.columns(2)
+    
     with col1:
-        uploaded_file = st.file_uploader("Загрузить фото 📸", type=["jpg", "png", "jpeg"])
-        if uploaded_file:
-            st.image(uploaded_file, caption="Ваше фото")
-
+        crop = st.selectbox("1. Культура:", list(DISEASE_DB.keys()))
+    
     with col2:
-        if uploaded_file is not None:
-            if st.button("🔍 Определить болезнь", type="primary"):
-                with st.spinner("🧠 Нейросеть думает... (подождите 10-20 сек)"):
-                    result = query_ai(uploaded_file.getvalue())
-                    
-                    if "error" in result:
-                        st.error(f"❌ Ошибка: {result['error']}")
-                        st.warning("Проверьте, настроен ли HF_TOKEN в Render.")
-                    elif isinstance(result, list):
-                        prediction = result[0]
-                        raw_label = prediction["label"]
-                        confidence = int(prediction["score"] * 100)
-                        
-                        # Извлекаем код болезни
-                        disease_code = raw_label.split("___")[-1] if "___" in raw_label else raw_label
-                        
-                        # Ищем в базе советов
-                        info = TREATMENT_DB.get(disease_code, {"name": f"Неизвестное ({disease_code})", "solution": "Попробуйте обработать универсальным Фитоспорином."})
-
-                        st.success(f"🩺 **Диагноз:** {info['name']}")
-                        st.info(f"💊 **Чем лечить:** {info['solution']}")
-                        st.progress(confidence / 100, text=f"Уверенность ИИ: {confidence}%")
-                    else:
-                        st.error("Не удалось получить ответ от сервера.")
-        else:
-            st.info("👈 Загрузите фото в меню слева")
-
+        symptoms = st.selectbox("2. Симптомы:", list(DISEASE_DB[crop].keys()))
+    
+    if st.button("🔍 Найти диагноз", type="primary"):
+        disease = DISEASE_DB[crop][symptoms]
+        
+        st.error(f"🩺 **Диагноз:** {disease['diagnosis']}")
+        st.success(f"💊 **Лечение:** {disease['treatment']}")
+        st.info(f"🛡️ **Профилактика:** {disease['prevention']}")
+    
     st.divider()
-    st.subheader("📖 Справочник препаратов")
-    st.write("Всегда читайте инструкцию к препарату перед применением!")
+    st.caption("💡 Совет: Если не нашли свой симптом — выберите ближайший по описанию.")
