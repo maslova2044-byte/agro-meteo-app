@@ -66,4 +66,43 @@ DISEASE_DB = {
     },
     "🌶️ Перец": {
         "🟣 Фиолетовый оттенок листьев": {"diagnosis": "Недостаток фосфора / Холод", "treatment": "🌡️ Укрытие, подкормка монофосфатом", "prevention": "Температура выше +15°C."},
-        "🟡 Опадают цветы и завязи": {"diagnosis": "Перегрев / Стресс от засухи", "treatment
+        "🟡 Опадают цветы и завязи": {"diagnosis": "Перегрев / Стресс от засухи", "treatment": "💧 Регулярный полив, притенение", "prevention": "Мульчирование почвы."},
+        "🟤 Черная ножка у рассады": {"diagnosis": "Грибковое заболевание", "treatment": "🛡️ Превикур, Фитоспорин", "prevention": "Стерилизация грунта, умеренный полив."}
+    }
+}
+
+# --- ИНТЕРФЕЙС ---
+mode = st.sidebar.radio("🌿 Выберите режим:", ["📅 Календарь посадок", "🔍 Диагностика болезней"], index=0)
+
+if mode == "📅 Календарь посадок":
+    st.title("🌿 АгроСистема")
+    with st.sidebar:
+        city = st.selectbox("📍 Город:", list(CITIES_DATA.keys()))
+        crop = st.selectbox("🥕 Культура:", list(CROPS_DATA.keys()))
+    
+    if st.button("🚀 Рассчитать даты", type="primary"):
+        today = datetime.now()
+        crop_info = CROPS_DATA[crop]
+        city_info = CITIES_DATA[city]
+        base_date = datetime(today.year, city_info["last_frost"][0], city_info["last_frost"][1])
+        if not crop_info["frost_sensitive"]:
+            base_date = datetime(today.year, city_info["soil_warm_10c"][0], city_info["soil_warm_10c"][1])
+        
+        planting = base_date + timedelta(days=crop_info["delay_days"])
+        st.success(f"📅 Оптимальный старт: **{planting.strftime('%d %B')}**")
+        st.write("📋 План работ:")
+        for task in crop_info["plan"]:
+            st.write(f"- {task}")
+
+else:
+    st.title("🌿 АгроСистема")
+    st.write("🔍 Быстрая диагностика по симптомам:")
+    col1, col2 = st.columns(2)
+    with col1: crop = st.selectbox("1. Культура:", list(DISEASE_DB.keys()))
+    with col2: symptom = st.selectbox("2. Симптом:", list(DISEASE_DB[crop].keys()))
+    
+    if st.button("🔍 Узнать диагноз", type="primary"):
+        res = DISEASE_DB[crop][symptom]
+        st.error(f"🩺 **Диагноз:** {res['diagnosis']}")
+        st.success(f"💊 **Лечение:** {res['treatment']}")
+        st.info(f"🛡️ **Профилактика:** {res['prevention']}")
